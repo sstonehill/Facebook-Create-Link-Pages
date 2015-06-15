@@ -85,7 +85,7 @@ def pullSQL(LocationIDs):
     return path
     
 
-def createAndLinkPages(fileName, ignoreWarning, updateVanity): #createAndLinkPages('FacebookInput.xlsx', False, False)
+def createAndLinkPages(fileName, ignoreWarning, ignoreCoordinateWarning, updateVanity): #createAndLinkPages('FacebookInput.xlsx', False, False)
     aList = []    
     aList = importXLSX(fileName)
     outputList = []
@@ -124,7 +124,7 @@ def createAndLinkPages(fileName, ignoreWarning, updateVanity): #createAndLinkPag
             request='https://graph.facebook.com/v2.3/'+brandPageID+'/locations?access_token='+accessToken+ \
             '&main_page_id='+brandPageID+'&store_number='+yextID+ \
             '&store_name='+name+'&location='+location+'&phone='+phone+'&page_username='+vanityURL+ \
-            '&place_topics=['+categories+']&ignore_coordinate_warnings='+ str(ignoreWarning)
+            '&place_topics=['+categories+']&ignore_coordinate_warnings='+ str(ignoreCoordinateWarning)+'&ignore_coordinate_warnings='+ str(ignoreWarning)
 
             response = requests.post(request)
             print str(float(ID)) + ' : ' + str(response.json())
@@ -138,7 +138,7 @@ def createAndLinkPages(fileName, ignoreWarning, updateVanity): #createAndLinkPag
             request='https://graph.facebook.com/v2.3/'+brandPageID+'/locations?access_token='+accessToken+ \
             '&main_page_id='+brandPageID+'&store_number='+yextID+'&location_page_id='+pageID+ \
             '&store_name='+name+'&location='+location+'&phone='+phone+'&page_username='+vanityURL+ \
-            '&place_topics=['+categories+']&ignore_coordinate_warnings='+ str(ignoreWarning)
+            '&place_topics=['+categories+']&ignore_coordinate_warnings='+ str(ignoreCoordinateWarning)+'&ignore_coordinate_warnings='+ str(ignoreWarning)
             
             response = requests.post(request)
             print ID + ' : ' + str(response.json())
@@ -246,12 +246,16 @@ def controlCreateLinkPages():
     if ignoreWarning == "True": ignoreWarning = True
     else: ignoreWarning = False
 
+    ignoreCoordinateWarning = selectOption(["True","False"],"Ignore coordinate warnings? (True/False)")
+    if ignoreCoordinateWarning == "True": ignoreCoordinateWarning = True
+    else: ignoreCoordinateWarning = False  
+    
     updateVanity = selectOption(["True","False"],"Update vanity URLs? (True/False)")
     if updateVanity == "True": updateVanity = True
     else: updateVanity = False    
 
     print "Processing...\n"
-    outfile = createAndLinkPages(filepath, ignoreWarning, updateVanity)
+    outfile = createAndLinkPages(filepath, ignoreWarning, ignoreCoordinateWarning, updateVanity)
     print "Output file path: " + outfile
 
 #Function that handles user input based on provided list of valid options
@@ -268,4 +272,3 @@ def selectOption(valid_list, message):
 
 
 controlMain()
-
