@@ -21,12 +21,12 @@ from pandas import *
 
 #LocationIDs = "(2297361)"
 
-def pullSQL(LocationIDs):
+def pullSQL():
     yextProdDB = MySQLdb.connect(host="db-slave.nj1.yext.com", user="readonly", passwd="chelsea", db="alpha")
     cursor = yextProdDB.cursor() 
     SQLQuery = []
     
-    with open ("J:\SQL\Facebook - Fields for Script.sql", "r") as myfile:
+    with open ("J:\SQL\Facebook Fields for Script.sql", "r") as myfile:
         for line in myfile:
             if "--" in line:
                 SQLQuery.append((re.match(r'^.*?\--', line).group(0)).replace("--",""))
@@ -37,19 +37,20 @@ def pullSQL(LocationIDs):
                 next(myfile)
             else:
                 SQLQuery.append(line)
-
+                
     cursor.execute(''.join(SQLQuery))
     yextProdData = cursor.fetchall()
-    yextProdData = [list(i) for i in yextProdData]
-    yextProdData.insert(0,[i[0] for i in cursor.description])
+    yextProdData = [list(v) for v in yextProdData]
+    yextProdData.insert(0,[v[0] for v in cursor.description])
+    yextProdData = [[str(v) for v in w] for w in yextProdData]
+    yextProdData = [[v[1:] if v.startswith("'") else v for v in w] for w in yextProdData]
     yextProdDB.close()
-
     
     locationCMSDB = MySQLdb.connect(host="cms-sql-slave.nj1.yext.com", user="geostore-ro", passwd="pigeonlatlng", db="alpha")
     cursor = locationCMSDB.cursor() 
     SQLQuery = []
     
-    with open ("J:\SQL\Facebook - Categories for Script.sql", "r") as myfile:
+    with open ("J:\SQL\Facebook Categories for Script.sql", "r") as myfile:
         for line in myfile:
             if "--" in line:
                 SQLQuery.append((re.match(r'^.*?\--', line).group(0)).replace("--",""))
@@ -63,91 +64,73 @@ def pullSQL(LocationIDs):
     
     cursor.execute(''.join(SQLQuery))
     locationCMSData = cursor.fetchall()
-    locationCMSData = [list(i) for i in locationCMSData]
-    locationCMSData.insert(0,[i[0] for i in cursor.description])
+    locationCMSData = [list(v) for v in locationCMSData]
+    locationCMSData.insert(0,[v[0] for v in cursor.description])
+    locationCMSData = [[str(v) for v in w] for w in locationCMSData]
+    locationCMSData = [[v[1:] if v.startswith("'") else v for v in w] for w in locationCMSData]
     locationCMSDB.close()
     
-    tokenDict = getAllTokens(yextProdData[1][14])
-    
+    tokenDict = {}
     for x in xrange(1, len(yextProdData)):
-        yextProdData[x][10] = str(yextProdData[x][10].replace("'", ""))
-        
-        if yextProdData[x][13] != None:
-            yextProdData[x][13] = str(yextProdData[x][13].replace("'", ""))
-            yextProdData[x][14] = str(tokenDict[yextProdData[x][13]])
-        
-        for y in xrange(1, len(locationCMSData)):
-            if str(yextProdData[x][18]) == str(locationCMSData[y][0]):
-                yextProdData[x][11] = str(locationCMSData[y][1].replace("'", ""))
-                yextProdData[x][12] = str(locationCMSData[y][2].replace("'", ""))
-
-    path = exportXLSX(yextProdData, "FacebookInput.xlsx")
-    return path
+        if yextProdData[x][13] == 'None' or yextProdData[x][14] == 'None':
+            print yextProdData[x][18] + " does not have a Facebook account assigned or DB-Slave is behind"
+        elif not tokenDict:
+            tokenDict = getAllTokens(yextProdData[x][14])
+            yextProdData[x][14] = tokenDict[yextProdData[x][13]]
+        elif tokenDict:
+            yextProdData[x][14] = tokenDict[yextProdData[x][13]]
     
+        for y in xrange(1, len(locationCMSData)):
+            if yextProdData[x][18] == locationCMSData[y][0]:
+                yextProdData[x][11] = locationCMSData[y][1]
+                yextProdData[x][12] = locationCMSData[y][2]
+    
+    exportXLSX(yextProdData, "FacebookInput.xlsx")
+
 
 def createAndLinkPages(fileName, ignoreWarning, updateVanity): #createAndLinkPages('FacebookInput.xlsx', False, False)
-    aList = []    
-    aList = importXLSX(fileName)
-    outputList = []
-    outputList.append(['locationid', 'partnerid', 'PL Status', 'externalId', 'externalUrl'])
-    errorList = []
-    errorList.append(['locationid', 'error'])
-    
-    for x in xrange(1, len(aList)):
+    fileName = 'FacebookInput.xlsx'
+    data = importXLSX(fileName)
+    outputSMS = [['locationid', 'error', 'attempted request']]
+    outputErrors = [['locationid', 'partnerid', 'PL Status', 'externalId', 'externalUrl']]
+  
+    for x in xrange(1, len(data)):
         time.sleep(1)
-        yextID = str(int(float(aList[x][0])))
-        name = str(urllib.quote_plus(aList[x][1]))
-        address = str(urllib.quote_plus(aList[x][2]))
-        city = str(urllib.quote_plus(aList[x][3]))
-        state = str(aList[x][4])
-        country = str(aList[x][5])
-        zipCode = str(int(float(aList[x][6])))
-        phone = str(int(float(aList[x][7])))
-        latitude = str(aList[x][8])
-        longitude = str(aList[x][9])
-        pageID = str(aList[x][10].replace("'", ""))
-        categories = str(aList[x][11].replace("'", ""))
-        brandPageID = str(aList[x][13].replace("'", ""))
-        accessToken = str(aList[x][14])
-        pID = '559'
-        ID = str(aList[x][18])
-        
         if updateVanity:
-            vanityURL = str(aList[x][15])
+            vanityURL = data[x][15]
         else:
             vanityURL = ''
         
-        location = '{"city":"'+city+'","state":"'+state+'","country":"'+country+'","zip":"' \
-        +zipCode+'","street":"'+address+'","longitude":'+longitude+',"latitude":'+latitude+'}'
+        location = '{"city":"'+data[x][3]+'","state":"'+data[x][4]+'","country":"'+data[x][5]+'","zip":"' \
+        +data[x][6]+'","street":"'+data[x][2]+'","longitude":'+data[x][9]+',"latitude":'+data[x][8]+'}'
         
-        if (pageID == '0' or pageID == ''):
-            request='https://graph.facebook.com/v2.3/'+brandPageID+'/locations?access_token='+accessToken+ \
-            '&main_page_id='+brandPageID+'&store_number='+yextID+ \
-            '&store_name='+name+'&location='+location+'&phone='+phone+'&page_username='+vanityURL+ \
-            '&place_topics=['+categories+']&ignore_coordinate_warnings='+ str(ignoreWarning)
+        if (data[x][10] == '0' or data[x][10] == ''):
+            request = 'https://graph.facebook.com/v2.3/'+data[x][13]+'/locations?access_token='+data[x][14]+ \
+            '&main_page_id='+data[x][13]+'&store_number='+data[x][0]+ \
+            '&store_name='+data[x][1]+'&location='+location+'&phone='+data[x][7]+'&page_username='+vanityURL+ \
+            '&place_topics=['+data[x][11].replace("'","")+']&ignore_coordinate_warnings='+ str(ignoreWarning)
 
             response = requests.post(request)
-            print str(float(ID)) + ' : ' + str(response.json())
-            newPageID = re.sub("[^0-9]", "", response.text)
+            print data[x][18] + ' : ' + str(response.json())
+            externalID = re.sub("[^0-9]", "", response.text)
             if response.status_code == 200:
-                outputList.append([str(float(ID)), pID, 'Sync', newPageID, 'http://facebook.com/' + newPageID])
+                outputSMS.append([data[x][18], 559, 'Sync', externalID, 'http://facebook.com/' + externalID])
             else:
-                errorList.append([str(float(ID)), str(response.json()), request])
+                outputErrors.append([data[x][18], str(response.json()), request])
 
         else:
-            request='https://graph.facebook.com/v2.3/'+brandPageID+'/locations?access_token='+accessToken+ \
-            '&main_page_id='+brandPageID+'&store_number='+yextID+'&location_page_id='+pageID+ \
-            '&store_name='+name+'&location='+location+'&phone='+phone+'&page_username='+vanityURL+ \
-            '&place_topics=['+categories+']&ignore_coordinate_warnings='+ str(ignoreWarning)
+            request = 'https://graph.facebook.com/v2.3/'+data[x][13]+'/locations?access_token='+data[x][14]+ \
+            '&main_page_id='+data[x][13]+'&store_number='+data[x][0]+'&location_page_id='+data[x][10]+ \
+            '&store_name='+data[x][1]+'&location='+location+'&phone='+data[x][7]+'&page_username='+vanityURL+ \
+            '&place_topics=['+data[x][11].replace("'","")+']&ignore_coordinate_warnings='+ str(ignoreWarning)
             
             response = requests.post(request)
-            print ID + ' : ' + str(response.json())
+            print data[x][18] + ' : ' + str(response.json())
             if response.status_code <> 200:
-                errorList.append([str(float(ID)), str(response.json())])
+                outputErrors.append([data[x][18], str(response.json()), request])
 
-#    exportCSV(outputList, 'FacebookOutput.csv')
-    path = exportXLSX2(outputList, errorList, 'FacebookOutput.xlsx')
-    return path
+    exportXLSX2(outputSMS, outputErrors, 'FacebookOutput.xlsx')
+    
     
 def getAllTokens(url):
     tokenRequest = urllib2.Request(url, headers={'accept': '*/*'})
@@ -163,8 +146,6 @@ def getAllTokens(url):
         tokenDict[brandPageID] = token
     return tokenDict
 
-
-
 def exportXLSX(listName, fileName):
     xbook = xlsxwriter.Workbook(fileName, {'strings_to_urls': False})
     xsheet = xbook.add_worksheet('FacebookInput')
@@ -172,8 +153,7 @@ def exportXLSX(listName, fileName):
     for row in listName:
         xsheet.write_row(rowNum, 0, row)
         rowNum += 1
-    path = str(os.getcwd())+"\\"+fileName
-    return path
+    xbook.close()
         
 def exportXLSX2(listName, list2Name, fileName):
     xbook = xlsxwriter.Workbook(fileName, {'strings_to_urls': False})
@@ -187,8 +167,7 @@ def exportXLSX2(listName, list2Name, fileName):
     for row in list2Name:
         xsheet2.write_row(rowNum, 0, row)
         rowNum += 1
-    path = str(os.getcwd())+"\\"+fileName
-    return path
+    xbook.close()
 
 def importXLSX(fileName):
     inputData = []
@@ -200,10 +179,6 @@ def importXLSX(fileName):
             inputData[x].append(str(worksheet.cell_value(x, y)))
     return inputData
 
-def exportCSV(listName, fileName):
-    with open(fileName, 'wb') as csvFile:
-        writer = csv.writer(csvFile)
-        writer.writerows(listName)
 
 def controlMain():
     print "\nWelcome to the Facebook Create & Link Pages tool!"
